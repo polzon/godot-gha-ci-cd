@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Git pre-commit hook to format and lint staged GDScript
+# files using gdformat and gdlint.
+
 repo_root="$(git rev-parse --show-toplevel)"
 cd "$repo_root"
 
