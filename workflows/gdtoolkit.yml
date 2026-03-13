@@ -1,0 +1,27 @@
+name: gdtoolkit static checks
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DIR: .
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  static-checks:
+    name: 'Static checks'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: Scony/godot-gdscript-toolkit@4.5.0
+      - run: gdlint -v ${{ env.DIR }}
+      - run: gdformat --check ${{ env.DIR }}

@@ -1,0 +1,50 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+if ! command -v python3 >/dev/null 2>&1; then
+	echo "pre-commit: python3 is not installed or not on PATH"
+	exit 1
+fi
+
+if ! command -v gdformat >/dev/null 2>&1; then
+	echo "pre-commit: gdformat is not installed or not on PATH"
+	exit 1
+fi
+
+if ! command -v gdlint >/dev/null 2>&1; then
+	echo "pre-commit: gdlint is not installed or not on PATH"
+	exit 1
+fi
+
+echo "pre-commit: cleaning up .tmp files"
+python3 .githooks/cleanup_tmp_files.py
+
+excluded_dirs=(
+	"addons/gdunit4"
+)
+
+git_pathspec=('*.gd')
+for excluded_dir in "${excluded_dirs[@]}"; do
+	git_pathspec+=(":(exclude)${excluded_dir}/**")
+done
+
+mapfile -t staged_gd_files < <(
+	git diff --cached --name-only --diff-filter=ACMR -- "${git_pathspec[@]}" || true
+)
+
+if [ "${#staged_gd_files[@]}" -eq 0 ]; then
+	echo "pre-commit: no staged GDScript files need checking"
+	exit 0
+fi
+
+echo "pre-commit: formatting staged GDScript files with gdformat"
+gdformat -l 80 "${staged_gd_files[@]}"
+
+# Re-stage in case gdformat changed file contents.
+git add "${staged_gd_files[@]}"
+
+echo "pre-commit: linting staged GDScript files with gdlint"
+gdlint -v "${staged_gd_files[@]}"

@@ -1,0 +1,75 @@
+---
+name: "Export Web"
+
+on:
+  workflow_call:
+    inputs:
+      godot_version:
+        required: true
+        type: string
+      export_name:
+        required: true
+        type: string
+      project_path:
+        required: true
+        type: string
+      templates_cache_key:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  export-web:
+    name: Web Export
+    runs-on: ubuntu-latest
+    container:
+      image: barichello/godot-ci:latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Restore Export Templates Cache
+        id: templates-cache
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ~/.local/share/godot/export_templates
+          key: ${{ inputs.templates_cache_key }}
+          restore-keys: |
+            godot-templates-
+
+      - name: Restore Import Cache
+        id: import-cache
+        continue-on-error: true
+        uses: actions/cache@v5
+        with:
+          path: ${{ github.workspace }}/${{ inputs.project_path }}/.godot/imported
+          key: godot-import-${{ inputs.godot_version }}-${{ hashFiles('project.godot', 'export_presets.cfg') }}
+          restore-keys: |
+            godot-import-${{ inputs.godot_version }}-
+
+      - name: Pre-import Project
+        if: steps.import-cache.outputs.cache-hit != 'true'
+        run: |
+          cd ${{ inputs.project_path }}
+          godot --headless --verbose --editor --import --quit
+
+      - name: Web Build
+        run: |
+          mkdir -v -p build/web
+          EXPORT_DIR="$(readlink -f build)"
+          cd ${{ inputs.project_path }}
+          EXPORT_NAME="${{ inputs.export_name }}"
+          EXPORT_FILE="$EXPORT_DIR/web/index.html"
+          godot --headless --verbose --export-release "Web" "$EXPORT_FILE"
+
+      - name: Upload Web Artifact
+        uses: actions/upload-artifact@v6
+        with:
+          name: quintessence-web
+          path: build/web
+          if-no-files-found: error
