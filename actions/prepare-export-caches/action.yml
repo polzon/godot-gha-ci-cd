@@ -1,0 +1,58 @@
+name: prepare-export-caches
+description: Restore Godot export/import caches and pre-import the project when needed
+
+inputs:
+  project_path:
+    description: Root path of the Godot project
+    required: false
+    default: "."
+  godot_version:
+    description: Godot version used for import cache key
+    required: true
+  templates_cache_key:
+    description: Cache key for Godot export templates
+    required: true
+  templates_restore_keys:
+    description: Restore keys for Godot export templates cache
+    required: false
+    default: |
+      godot-templates-
+
+runs:
+  using: composite
+  steps:
+    - name: Verify project checkout
+      shell: bash
+      run: bash ./.github/actions/prepare-export-caches/verify-project-checkout.sh "${{ inputs.project_path }}"
+
+    - name: Ensure export template alias
+      shell: bash
+      env:
+        GODOT_VERSION: ${{ inputs.godot_version }}
+      run: bash ./.github/actions/prepare-export-caches/ensure-export-template-alias.sh
+
+    - name: Restore Export Templates Cache
+      id: templates-cache
+      continue-on-error: true
+      uses: actions/cache@v5
+      with:
+        path: ${{ env.HOME }}/.local/share/godot/export_templates
+        key: ${{ inputs.templates_cache_key }}
+        restore-keys: ${{ inputs.templates_restore_keys }}
+
+    - name: Restore Import Cache
+      id: import-cache
+      continue-on-error: true
+      uses: actions/cache@v5
+      with:
+        path: ${{ github.workspace }}/${{ inputs.project_path }}/.godot/imported
+        key: godot-import-${{ inputs.godot_version }}-${{ hashFiles(format('{0}/project.godot', inputs.project_path), format('{0}/export_presets.cfg', inputs.project_path)) }}
+        restore-keys: |
+          godot-import-${{ inputs.godot_version }}-
+
+    - name: Pre-import Project
+      if: steps.import-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        cd ${{ inputs.project_path }}
+        godot --headless --verbose --editor --import --quit

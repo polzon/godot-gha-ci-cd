@@ -1,0 +1,21 @@
+name: Static Checks
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+jobs:
+  static-checks:
+    name: Verify Tests and Checks
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - name: Run verification checks
+        uses: ./.github/actions/static-checks
+        with:
+          project_path: ${{ vars.PROJECT_PATH }}
+          godot_version: ${{ vars.GODOT_VERSION }}
+          godot_version_label: ${{ vars.GODOT_VERSION_LABEL }}

@@ -1,0 +1,47 @@
+name: deploy-butler
+description: Conditionally push build artifacts to itch.io using butler
+
+inputs:
+  enabled:
+    description: Whether to run butler push
+    required: false
+    default: "true"
+  source_path:
+    description: File or directory to push
+    required: true
+  channel:
+    description: itch.io channel target (e.g. polzon/quintessence:web)
+    required: true
+  deploy_version:
+    description: Version label passed to --userversion
+    required: true
+  butler_api_key:
+    description: Butler API key used for authentication
+    required: true
+  allow_missing:
+    description: If true, skip push when source_path does not exist
+    required: false
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Setup butler
+      if: ${{ inputs.enabled == 'true' }}
+      uses: remarkablegames/setup-butler@v2.0.5
+
+    - name: Butler Push
+      if: ${{ inputs.enabled == 'true' }}
+      shell: bash
+      env:
+        BUTLER_API_KEY: ${{ inputs.butler_api_key }}
+      run: |
+        if [ "${{ inputs.allow_missing }}" = "true" ] && [ ! -e "${{ inputs.source_path }}" ]; then
+          echo "Source not found, skipping: ${{ inputs.source_path }}"
+          exit 0
+        fi
+
+        butler push \
+          "${{ inputs.source_path }}" \
+          "${{ inputs.channel }}" \
+          --userversion "${{ inputs.deploy_version }}"

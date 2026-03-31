@@ -1,0 +1,37 @@
+name: run-godot-export
+description: Run a Godot headless export for a preset and output file path
+
+inputs:
+  project_path:
+    description: Root path of the Godot project
+    required: false
+    default: "."
+  godot_version:
+    description: Expected Godot version (e.g. 4.6.2)
+    required: true
+  godot_version_label:
+    description: Expected Godot version label/status (e.g. rc2, stable)
+    required: true
+  export_preset:
+    description: Godot export preset name
+    required: true
+  output_subpath:
+    description: Output file path relative to the build directory
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Validate Godot runtime version
+      shell: bash
+      env:
+        GODOT_VERSION: ${{ inputs.godot_version }}
+      run: bash ./.github/actions/run-godot-export/validate-godot-runtime-version.sh
+
+    - name: Run Godot Export
+      shell: bash
+      env:
+        PROJECT_PATH: ${{ inputs.project_path }}
+        GODOT_EXPORT_PRESET: ${{ inputs.export_preset }}
+        GODOT_OUTPUT_SUBPATH: ${{ inputs.output_subpath }}
+      run: bash ./.github/actions/run-godot-export/run-godot-export.sh

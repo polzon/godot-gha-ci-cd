@@ -1,0 +1,51 @@
+name: static-checks
+description: Run GDToolkit linting and GDUnit4 tests
+
+inputs:
+  project_path:
+    description: Root path of the Godot project
+    required: true
+  godot_version:
+    description: Godot version for GDUnit4 tests
+    required: true
+  godot_version_label:
+    description: Godot status/label for GDUnit4 tests (e.g. stable, rc2)
+    required: true
+  test_paths:
+    description: GDUnit4 test paths
+    required: false
+    default: "res://tests"
+  test_report_name:
+    description: GDUnit4 report filename
+    required: false
+    default: "gdunit4-test-report.xml"
+
+runs:
+  using: composite
+  steps:
+    - name: Verify GDUnit4 checkout
+      shell: bash
+      run: bash ./.github/actions/static-checks/verify-gdunit4-setup.sh "${{ inputs.project_path }}"
+
+    - name: Install GDToolkit
+      uses: Scony/godot-gdscript-toolkit@4.5.0
+
+    - name: Run gdlint
+      run: gdlint -v ${{ inputs.project_path }}
+      shell: bash
+
+    - name: Run gdformat check
+      run: gdformat --check ${{ inputs.project_path }}
+      shell: bash
+
+    - name: Run GDUnit4 tests
+      uses: godot-gdunit-labs/gdUnit4-action@v1
+      with:
+        godot-version: ${{ inputs.godot_version }}
+        godot-status: ${{ inputs.godot_version_label }}
+        version: installed
+        paths: ${{ inputs.test_paths }}
+        timeout: 15
+        publish-report: false
+        upload-report: false
+        report-name: ${{ inputs.test_report_name }}

@@ -1,0 +1,45 @@
+name: setup-templates
+description: Generate deploy version and restore Godot export template cache
+
+inputs:
+  godot_version:
+    description: Godot version
+    required: true
+  godot_version_label:
+    description: Godot version label
+    required: true
+
+outputs:
+  cache_hit:
+    description: Whether export templates cache was hit
+    value: ${{ steps.cache-templates.outputs.cache-hit }}
+  deploy_version:
+    description: Generated deploy version string
+    value: ${{ steps.version.outputs.version }}
+  templates_cache_key:
+    description: Computed templates cache key
+    value: ${{ steps.cache-key.outputs.value }}
+
+runs:
+  using: composite
+  steps:
+    - name: Generate Version
+      id: version
+      shell: bash
+      run: echo "version=$(date -u +'%y.%m.%d-%H%M')" >> "$GITHUB_OUTPUT"
+
+    - name: Compute Templates Cache Key
+      id: cache-key
+      shell: bash
+      run: echo "value=godot-templates-${{ inputs.godot_version }}-${{ inputs.godot_version_label }}" >> "$GITHUB_OUTPUT"
+
+    - name: Cache Export Templates
+      continue-on-error: true
+      id: cache-templates
+      uses: actions/cache@v5
+      with:
+        path: ${{ env.HOME }}/.local/share/godot/export_templates
+        key: ${{ steps.cache-key.outputs.value }}
+        restore-keys: |
+          godot-templates-${{ inputs.godot_version }}-
+          godot-templates-

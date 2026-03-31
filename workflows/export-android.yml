@@ -1,133 +1,65 @@
----
 name: "Export Android"
 
 on:
-  workflow_dispatch:
   workflow_call:
     inputs:
-      godot_version:
-        required: true
-        type: string
-      godot_version_label:
-        required: true
-        type: string
-      export_name:
-        required: true
-        type: string
-      project_path:
-        required: true
-        type: string
       templates_cache_key:
         required: true
         type: string
-    secrets:
-      keystore_password:
+      deploy_version:
         required: true
+        type: string
 
 permissions:
   contents: read
 
 jobs:
   export-android:
-    name: Android Export
+    name: Build & Deploy
     runs-on: ubuntu-latest
     container:
-      image: barichello/godot-ci:latest
+      image: barichello/godot-ci:${{ vars.GODOT_VERSION }}
     steps:
       - name: Checkout
         uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - name: Restore Export Templates Cache
-        id: templates-cache
-        continue-on-error: true
-        uses: actions/cache@v5
+      - name: Prepare Export Caches
+        uses: ./.github/actions/prepare-export-caches
         with:
-          path: ~/.local/share/godot/export_templates
-          key: ${{ inputs.templates_cache_key }}
-          restore-keys: |
-            godot-templates-${{ inputs.godot_version }}-
+          project_path: ${{ vars.PROJECT_PATH }}
+          godot_version: ${{ vars.GODOT_VERSION }}
+          templates_cache_key: ${{ inputs.templates_cache_key }}
+          templates_restore_keys: |
+            godot-templates-${{ vars.GODOT_VERSION }}-
             godot-templates-
 
-      - name: Restore Import Cache
-        id: import-cache
-        continue-on-error: true
-        uses: actions/cache@v5
+      - name: Prepare Android
+        uses: ./.github/actions/prepare-android
         with:
-          path: ${{ github.workspace }}/${{ inputs.project_path }}/.godot/imported
-          key: godot-import-${{ inputs.godot_version }}-${{ hashFiles('project.godot', 'export_presets.cfg') }}
-          restore-keys: |
-            godot-import-${{ inputs.godot_version }}-
-
-      - name: Pre-import Project
-        if: steps.import-cache.outputs.cache-hit != 'true'
-        run: |
-          cd ${{ inputs.project_path }}
-          godot --headless --verbose --editor --import --quit
-
-      - name: Restore Android Build Template Cache
-        id: android-template-cache
-        uses: actions/cache@v5
-        with:
-          path: android/build
-          key: android-build-template-${{ inputs.godot_version }}-${{ inputs.godot_version_label }}
-          restore-keys: |
-            android-build-template-${{ inputs.godot_version }}-
-
-      - name: Extract Android Template
-        if: steps.android-template-cache.outputs.cache-hit != 'true'
-        run: |
-          # Locate godot export templates
-          TEMPLATES_DIR="${HOME}/.local/share/godot/export_templates/${{ inputs.godot_version }}.${{ inputs.godot_version_label }}"
-          if [ ! -f "$TEMPLATES_DIR/android_source.zip" ]; then
-            echo "ERROR: android_source.zip not found at $TEMPLATES_DIR"
-            exit 1
-          fi
-
-          mkdir -p android/build
-          unzip -q "$TEMPLATES_DIR/android_source.zip" -d android/build
-
-          # Store version metadata for reference
-          echo "${{ inputs.godot_version }}.${{ inputs.godot_version_label }}" \
-            > android/build/.build_version
-
-      - name: Install Java SDK
-        id: java-setup
-        run: |
-          apt-get update
-          apt-get install -y default-jdk-headless
-          JAVA_BIN=$(which java)
-          if [ -z "$JAVA_BIN" ]; then
-            echo "ERROR: Java binary not found"
-            exit 1
-          fi
-          JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$JAVA_BIN")")")
-          if [ -z "$JAVA_HOME" ] || [ ! -d "$JAVA_HOME" ]; then
-            echo "ERROR: JAVA_HOME is empty or invalid: $JAVA_HOME"
-            exit 1
-          fi
-          echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
-          echo "java_home=$JAVA_HOME" >> $GITHUB_OUTPUT
-          echo "Detected JAVA_HOME: $JAVA_HOME"
+          godot_version: ${{ vars.GODOT_VERSION }}
+          godot_version_label: ${{ vars.GODOT_VERSION_LABEL }}
 
       - name: Android APK Build
         env:
           GODOT_ANDROID_KEYSTORE_RELEASE_PATH: ${{ github.workspace }}/export/keystore/quintessence_maven.jks
           GODOT_ANDROID_KEYSTORE_RELEASE_USER: quintessence
-          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.keystore_password }}
-        run: |
-          mkdir -v -p build/android
-          EXPORT_DIR="$(readlink -f build)"
-          cd ${{ inputs.project_path }}
-          EXPORT_NAME="${{ inputs.export_name }}"
-          EXPORT_FILE="$EXPORT_DIR/android/${EXPORT_NAME}.apk"
-          godot --headless --verbose --export-release \
-            "Android - APK" "$EXPORT_FILE"
-
-      - name: Upload Android Artifact
-        uses: actions/upload-artifact@v6
+          GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+        uses: ./.github/actions/run-godot-export
         with:
-          name: quintessence-android
-          path: build/android
-          if-no-files-found: error
+          project_path: ${{ vars.PROJECT_PATH }}
+          godot_version: ${{ vars.GODOT_VERSION }}
+          godot_version_label: ${{ vars.GODOT_VERSION_LABEL }}
+          export_preset: Android - APK
+          output_subpath: android/${{ vars.PROJECT_NAME }}.apk
+
+      - name: Deploy Android APK to itch.io
+        continue-on-error: true
+        uses: ./.github/actions/deploy-butler
+        with:
+          source_path: build/android/${{ vars.PROJECT_NAME }}.apk
+          channel: ${{ vars.ITCHIO_CHANNEL }}:android-apk
+          deploy_version: ${{ inputs.deploy_version }}
+          butler_api_key: ${{ secrets.BUTLER_API_KEY }}
+          allow_missing: "true"

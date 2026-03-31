@@ -1,29 +1,31 @@
----
-name: "godot-ci export"
+name: "Continuous Integration"
 
 on:
   workflow_dispatch:
     inputs:
       build_web:
-        description: 'Build Web export'
+        description: "Build Web export"
         required: false
         default: true
         type: boolean
       build_windows:
-        description: 'Build Windows exports'
+        description: "Build Windows exports"
         required: false
         default: true
         type: boolean
       build_linux:
-        description: 'Build Linux exports'
+        description: "Build Linux exports"
         required: false
         default: true
         type: boolean
       build_android:
-        description: 'Build Android exports'
+        description: "Build Android exports"
         required: false
         default: false
         type: boolean
+  push:
+    branches:
+      - main
 
 permissions:
   actions: read
@@ -33,136 +35,71 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
-env:
-  GODOT_VERSION: "4.6.1"
-  GODOT_VERSION_LABEL: "stable"
-  EXPORT_NAME: Quintessence
-  PROJECT_PATH: "."
-
 jobs:
-  gdtoolkit-check:
-    name: GDToolkit Static Checks
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          submodules: recursive
-      - name: Install GDToolkit
-        uses: Scony/godot-gdscript-toolkit@4.5.0
-      - name: Run gdlint
-        run: gdlint -v ${{ env.PROJECT_PATH }}
-      - name: Run gdformat check
-        run: gdformat --check ${{ env.PROJECT_PATH }}
-
-  gdunit4-tests:
-    name: Run GDUnit4 Tests
-    runs-on: ubuntu-latest
-    needs: gdtoolkit-check
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v6
-        with:
-          submodules: recursive
-      - name: Run GDUnit4 tests
-        uses: godot-gdunit-labs/gdUnit4-action@v1
-        with:
-          godot-version: "4.6.1"
-          paths: "res://tests"
-          timeout: 15
-          publish-report: false
-          upload-report: false
-          report-name: gdunit4-test-report.xml
+  static-checks:
+    name: Verify Unit Tests and Static Checks
+    uses: ./.github/workflows/static-checks.yml
 
   setup-templates:
     name: Setup Templates
-    needs: gdunit4-tests
+    needs: static-checks
     runs-on: ubuntu-latest
     container:
-      image: barichello/godot-ci:latest
+      image: barichello/godot-ci:${{ vars.GODOT_VERSION }}
     outputs:
-      cache-hit: ${{ steps.cache-templates.outputs.cache-hit }}
-      godot-version: ${{ env.GODOT_VERSION }}
-      godot-version-label: ${{ env.GODOT_VERSION_LABEL }}
-      templates-cache-key: godot-templates-${{ env.GODOT_VERSION }}-${{ env.GODOT_VERSION_LABEL }}
-      deploy-version: ${{ steps.version.outputs.version }}
+      godot-version: ${{ vars.GODOT_VERSION }}
+      godot-version-label: ${{ vars.GODOT_VERSION_LABEL }}
+      templates-cache-key: ${{ steps.setup.outputs.templates_cache_key }}
+      deploy-version: ${{ steps.setup.outputs.deploy_version }}
     steps:
-      - name: Generate Version
-        id: version
-        run: echo "version=$(date -u +'%y.%m.%d-%H%M')" >> $GITHUB_OUTPUT
-
-      - name: Cache Export Templates
-        continue-on-error: true
-        id: cache-templates
-        uses: actions/cache@v5
+      - name: Checkout
+        uses: actions/checkout@v6
         with:
-          path: ~/.local/share/godot/export_templates
-          key: godot-templates-${{ env.GODOT_VERSION }}-${{ env.GODOT_VERSION_LABEL }}
-          restore-keys: |
-            godot-templates-${{ env.GODOT_VERSION }}-
-            godot-templates-
+          submodules: recursive
+
+      - name: Setup Templates Metadata and Cache
+        id: setup
+        uses: ./.github/actions/setup-templates
+        with:
+          godot_version: ${{ vars.GODOT_VERSION }}
+          godot_version_label: ${{ vars.GODOT_VERSION_LABEL }}
 
   export-windows:
     name: Windows Export
-    if: ${{ inputs.build_windows }}
+    if: ${{ inputs.build_windows != 'false' }}
     needs: setup-templates
     uses: ./.github/workflows/export-windows.yml
     with:
-      godot_version: ${{ needs.setup-templates.outputs.godot-version }}
-      export_name: Quintessence
-      project_path: "."
       templates_cache_key: ${{ needs.setup-templates.outputs.templates-cache-key }}
+      deploy_version: ${{ needs.setup-templates.outputs.deploy-version }}
+    secrets: inherit
 
   export-linux:
     name: Linux Export
-    if: ${{ inputs.build_linux }}
+    if: ${{ inputs.build_linux != 'false' }}
     needs: setup-templates
     uses: ./.github/workflows/export-linux.yml
     with:
-      godot_version: ${{ needs.setup-templates.outputs.godot-version }}
-      export_name: Quintessence
-      project_path: "."
       templates_cache_key: ${{ needs.setup-templates.outputs.templates-cache-key }}
+      deploy_version: ${{ needs.setup-templates.outputs.deploy-version }}
+    secrets: inherit
 
   export-web:
     name: Web Export
-    if: ${{ inputs.build_web }}
+    if: ${{ inputs.build_web != 'false' }}
     needs: setup-templates
     uses: ./.github/workflows/export-web.yml
     with:
-      godot_version: ${{ needs.setup-templates.outputs.godot-version }}
-      export_name: Quintessence
-      project_path: "."
       templates_cache_key: ${{ needs.setup-templates.outputs.templates-cache-key }}
+      deploy_version: ${{ needs.setup-templates.outputs.deploy-version }}
+    secrets: inherit
 
   export-android:
     name: Android Export
-    if: ${{ inputs.build_android }}
+    if: ${{ inputs.build_android == 'true' }}
     needs: setup-templates
     uses: ./.github/workflows/export-android.yml
     with:
-      godot_version: ${{ needs.setup-templates.outputs.godot-version }}
-      godot_version_label: ${{ needs.setup-templates.outputs.godot-version-label }}
-      export_name: Quintessence
-      project_path: "."
       templates_cache_key: ${{ needs.setup-templates.outputs.templates-cache-key }}
-    secrets:
-      keystore_password: ${{ secrets.ANDROID_KEYSTORE_PASS }}
-
-  deploy-itchio:
-    name: Deploy to itch.io
-    needs:
-      - setup-templates
-      - export-web
-      - export-windows
-      - export-linux
-      - export-android
-    if: ${{ always() && needs.setup-templates.result == 'success' && (!inputs.build_web || needs.export-web.result == 'success') && (!inputs.build_windows || needs.export-windows.result == 'success') && (!inputs.build_linux || needs.export-linux.result == 'success') && (!inputs.build_android || needs.export-android.result == 'success') }}
-    uses: ./.github/workflows/itchio-deploy.yml
-    with:
       deploy_version: ${{ needs.setup-templates.outputs.deploy-version }}
-      build_web: ${{ inputs.build_web }}
-      build_windows: ${{ inputs.build_windows }}
-      build_linux: ${{ inputs.build_linux }}
-      build_android: ${{ inputs.build_android }}
     secrets: inherit

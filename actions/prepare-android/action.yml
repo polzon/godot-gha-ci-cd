@@ -1,0 +1,60 @@
+name: prepare-android
+description: Restore Android build template cache, extract it if needed, and install Java SDK
+
+inputs:
+  godot_version:
+    description: Godot version (e.g. 4.3)
+    required: true
+  godot_version_label:
+    description: Godot version label (e.g. stable)
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Restore Android Build Template Cache
+      id: android-template-cache
+      uses: actions/cache@v5
+      with:
+        path: android/build
+        key: android-build-template-${{ inputs.godot_version }}-${{ inputs.godot_version_label }}
+        restore-keys: |
+          android-build-template-${{ inputs.godot_version }}-
+
+    - name: Extract Android Template
+      if: steps.android-template-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        # Locate godot export templates
+        TEMPLATES_DIR="${HOME}/.local/share/godot/export_templates/${{ inputs.godot_version }}.${{ inputs.godot_version_label }}"
+        if [ ! -f "$TEMPLATES_DIR/android_source.zip" ]; then
+          echo "ERROR: android_source.zip not found at $TEMPLATES_DIR"
+          exit 1
+        fi
+
+        mkdir -p android/build
+        unzip -q "$TEMPLATES_DIR/android_source.zip" -d android/build
+
+        # Store version metadata for reference
+        echo "${{ inputs.godot_version }}.${{ inputs.godot_version_label }}" \
+          > android/build/.build_version
+
+    - name: Install Java SDK
+      id: java-setup
+      shell: bash
+      run: |
+        apt-get update
+        apt-get install -y default-jdk-headless
+        JAVA_BIN=$(which java)
+        if [ -z "$JAVA_BIN" ]; then
+          echo "ERROR: Java binary not found"
+          exit 1
+        fi
+        JAVA_HOME=$(dirname "$(dirname "$(readlink -f "$JAVA_BIN")")")
+        if [ -z "$JAVA_HOME" ] || [ ! -d "$JAVA_HOME" ]; then
+          echo "ERROR: JAVA_HOME is empty or invalid: $JAVA_HOME"
+          exit 1
+        fi
+        echo "JAVA_HOME=$JAVA_HOME" >> $GITHUB_ENV
+        echo "java_home=$JAVA_HOME" >> $GITHUB_OUTPUT
+        echo "Detected JAVA_HOME: $JAVA_HOME"
