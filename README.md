@@ -8,14 +8,17 @@ Collection of Github Actions for use for Godot projects. I've designed these for
 
 ## Near-term goals:
 
-* Make Godot version global and configurable, rather then my hardcoded values.
 * Properly fix Android AAB exports, and rework APK exports.
-* OSX export support.
 * GitHub Pages support.
-* Decouple some logic like the nightly commit checks into a dedicated script.
+* Workflow to build Godot export templates from source, then upload as an artifact for other workflows.
 
 ## Later date goals:
 
 * Add Mono/C# build support.
-* Steam exports.
+* Steam exports. (Need to get a Steam page first)
 * Play Store exports.
+
+
+## Maybe one day, but probably not:
+
+* OSX export support. (I don't want to pay $100/yr for a developer license on a platform I don't use or can test on)
